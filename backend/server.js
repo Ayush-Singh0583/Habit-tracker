@@ -12,12 +12,30 @@ const exportRoutes = require('./routes/export');
 
 const app = express();
 
-/* ================= MIDDLEWARE ================= */
+/* ================= CORS FIX ================= */
+
+const allowedOrigins = [
+  "https://habit-tracker-dusky-beta.vercel.app",
+  "http://localhost:5173"
+];
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
-  credentials: true
+  origin: function (origin, callback) {
+    // allow requests with no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: false
 }));
+
+/* ================= BODY PARSER ================= */
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
