@@ -41,6 +41,9 @@ app.use((err, req, res, next) => {
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 });
+app.get('/', (req, res) => {
+  res.send('Backend is running 🚀');
+});
 
 // DB + Start
 mongoose.connect(process.env.MONGO_URI)
