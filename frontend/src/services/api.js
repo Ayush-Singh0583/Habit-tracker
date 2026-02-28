@@ -6,13 +6,11 @@ import axios from "axios";
 
 const api = axios.create({
   baseURL: `${import.meta.env.VITE_API_URL}/api`,
-  headers: { "Content-Type": "application/json" },
-  withCredentials: true,
+  headers: { "Content-Type": "application/json" }
 });
 
 /* =========================
    Request Interceptor
-   Attach Access Token
 ========================= */
 
 api.interceptors.request.use((config) => {
@@ -25,7 +23,6 @@ api.interceptors.request.use((config) => {
 
 /* =========================
    Response Interceptor
-   Handle Token Refresh
 ========================= */
 
 let isRefreshing = false;
@@ -100,7 +97,6 @@ api.interceptors.response.use(
    API Modules
 ========================= */
 
-/* Auth */
 export const authAPI = {
   register: (data) => api.post("/auth/register", data),
   login: (data) => api.post("/auth/login", data),
@@ -108,7 +104,6 @@ export const authAPI = {
   updateProfile: (data) => api.patch("/auth/profile", data),
 };
 
-/* Habits */
 export const habitsAPI = {
   getAll: () => api.get("/habits"),
   get: (id) => api.get(`/habits/${id}`),
@@ -117,7 +112,6 @@ export const habitsAPI = {
   delete: (id) => api.delete(`/habits/${id}`),
 };
 
-/* Logs */
 export const logsAPI = {
   getAll: (params) => api.get("/logs", { params }),
   getToday: () => api.get("/logs/today"),
@@ -125,7 +119,6 @@ export const logsAPI = {
   delete: (id) => api.delete(`/logs/${id}`),
 };
 
-/* Analytics */
 export const analyticsAPI = {
   getOverview: () => api.get("/analytics/overview"),
   getAll: () => api.get("/analytics/all"),
@@ -133,7 +126,6 @@ export const analyticsAPI = {
     api.get(`/analytics/habit/${habitId}`, { params }),
 };
 
-/* Reminders */
 export const remindersAPI = {
   getAll: () => api.get("/reminders"),
   create: (data) => api.post("/reminders", data),
@@ -141,7 +133,6 @@ export const remindersAPI = {
   delete: (id) => api.delete(`/reminders/${id}`),
 };
 
-/* Export / Import */
 export const exportAPI = {
   exportData: (format = "json") =>
     api.get("/export", {
