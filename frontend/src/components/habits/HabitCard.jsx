@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, MoreHorizontal, Edit2, Trash2, TrendingUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -10,25 +10,53 @@ import ConfirmDeleteModal from "../ui/ConfirmDeleteModal";
 export default function HabitCard({ habit, log, onLog, onEdit, onDelete }) {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [checking, setChecking] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const today = format(new Date(), 'yyyy-MM-dd');
-  const isCompleted = log?.status === 'completed';
-  const isSkipped = log?.status === 'skipped';
 
-  const handleComplete = async () => {
-    if (checking) return;
-    setChecking(true);
-    try {
-      const newStatus = isCompleted ? null : 'completed';
-      if (newStatus === 'completed') fireCompletionGlow();
-      await onLog(habit._id, today, newStatus || 'skipped', {
-        intensity: habit.intensity
-      });
-    } finally {
-      setChecking(false);
+  /* ================= LOCAL OPTIMISTIC STATE ================= */
+
+  const [localStatus, setLocalStatus] = useState(log?.status || null);
+
+  // keep local state synced if backend updates externally
+  useEffect(() => {
+    setLocalStatus(log?.status || null);
+  }, [log?.status]);
+
+  const isCompleted = localStatus === 'completed';
+  const isSkipped = localStatus === 'skipped';
+
+  /* ================= VERSION CONTROL ================= */
+
+  const versionRef = useRef(0);
+
+  const handleComplete = () => {
+    const nextStatus = isCompleted ? 'skipped' : 'completed';
+
+    // 🔥 instant UI update
+    setLocalStatus(nextStatus);
+
+    if (nextStatus === 'completed') {
+      fireCompletionGlow();
     }
+
+    // increase version
+    const currentVersion = ++versionRef.current;
+
+    // fire backend without blocking UI
+    onLog(
+      habit._id,
+      today,
+      nextStatus,
+      { intensity: habit.intensity }
+    ).then(() => {
+      // only apply if this is latest click
+      if (versionRef.current !== currentVersion) return;
+    }).catch(() => {
+      // rollback only if this is latest request
+      if (versionRef.current !== currentVersion) return;
+      setLocalStatus(log?.status || null);
+    });
   };
 
   return (
@@ -91,7 +119,6 @@ export default function HabitCard({ habit, log, onLog, onEdit, onDelete }) {
             variants={checkmarkVariants}
             animate={isCompleted ? 'checked' : 'unchecked'}
             whileTap={{ scale: 0.9 }}
-            disabled={checking}
             className={`w-10 h-10 rounded-full border-2 flex items-center justify-center transition-colors duration-200 flex-shrink-0 ${
               isCompleted
                 ? 'border-transparent text-white'
@@ -156,7 +183,7 @@ export default function HabitCard({ habit, log, onLog, onEdit, onDelete }) {
             </div>
           </div>
 
-          {/* Actions */}
+          {/* Menu */}
           <div className="relative opacity-0 group-hover:opacity-100 transition-opacity duration-150">
             <button
               onClick={(e) => {
@@ -210,7 +237,6 @@ export default function HabitCard({ habit, log, onLog, onEdit, onDelete }) {
                   >
                     <Trash2 size={13} /> Delete
                   </button>
-
                 </motion.div>
               )}
             </AnimatePresence>
@@ -218,7 +244,6 @@ export default function HabitCard({ habit, log, onLog, onEdit, onDelete }) {
         </div>
       </motion.div>
 
-      {/* Confirm Delete Modal */}
       <ConfirmDeleteModal
         open={deleteOpen}
         habitName={habit.name}
