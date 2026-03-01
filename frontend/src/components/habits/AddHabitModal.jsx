@@ -28,13 +28,16 @@ export default function AddHabitModal({ onClose, onSuccess, editHabit }) {
     if (!form.name.trim()) { setError('Habit name is required'); return; }
     setLoading(true);
     setError('');
-    try {
+   try {
       if (editHabit) {
         await updateHabit(editHabit._id, form);
       } else {
         await createHabit(form);
       }
-      onSuccess?.();
+
+      onSuccess?.();  // update list if needed
+      onClose();      // ✅ THIS closes the modal
+
     } catch (err) {
       setError(err.response?.data?.message || 'Something went wrong');
     } finally {
