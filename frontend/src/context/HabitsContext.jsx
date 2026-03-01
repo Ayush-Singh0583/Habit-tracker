@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, useCallback } from 'react';
-import { habitsAPI, logsAPI } from '../services/api';
+import { createContext, useContext, useState, useCallback, useRef } from "react";
+import { habitsAPI, logsAPI } from "../services/api";
 
 const HabitsContext = createContext(null);
 
@@ -8,6 +8,9 @@ export const HabitsProvider = ({ children }) => {
   const [todayLogs, setTodayLogs] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  // 🔥 Track latest request per habit
+  const logVersions = useRef(new Map());
+
   /* ================= FETCH ================= */
 
   const fetchHabits = useCallback(async () => {
@@ -15,13 +18,13 @@ export const HabitsProvider = ({ children }) => {
     try {
       const [habitsRes, logsRes] = await Promise.all([
         habitsAPI.getAll(),
-        logsAPI.getToday()
+        logsAPI.getToday(),
       ]);
 
       setHabits(habitsRes.data.habits);
       setTodayLogs(logsRes.data.logs);
     } catch (err) {
-      console.error('Error fetching habits:', err);
+      console.error("Error fetching habits:", err);
     } finally {
       setLoading(false);
     }
@@ -31,7 +34,7 @@ export const HabitsProvider = ({ children }) => {
 
   const createHabit = useCallback(async (data) => {
     const { data: res } = await habitsAPI.create(data);
-    setHabits(prev => [...prev, res.habit]);
+    setHabits((prev) => [...prev, res.habit]);
     return res.habit;
   }, []);
 
@@ -39,8 +42,8 @@ export const HabitsProvider = ({ children }) => {
 
   const updateHabit = useCallback(async (id, data) => {
     const { data: res } = await habitsAPI.update(id, data);
-    setHabits(prev =>
-      prev.map(h => h._id === id ? res.habit : h)
+    setHabits((prev) =>
+      prev.map((h) => (h._id === id ? res.habit : h))
     );
     return res.habit;
   }, []);
@@ -49,90 +52,115 @@ export const HabitsProvider = ({ children }) => {
 
   const deleteHabit = useCallback(async (id) => {
     await habitsAPI.delete(id);
-    setHabits(prev => prev.filter(h => h._id !== id));
+    setHabits((prev) => prev.filter((h) => h._id !== id));
   }, []);
 
-  /* ================= OPTIMISTIC LOG ================= */
+  /* ================= PRODUCTION-GRADE LOGGING ================= */
 
-  const logHabit = useCallback(async (habitId, date, status, extra = {}) => {
+  const logHabit = useCallback(
+    async (habitId, date, status, extra = {}) => {
+      const version =
+        (logVersions.current.get(habitId) || 0) + 1;
 
-    // 🔥 Create optimistic log
-    const optimisticLog = {
-      _id: `temp-${habitId}-${Date.now()}`,
-      habit: habitId,
-      date,
-      status,
-      ...extra
-    };
+      logVersions.current.set(habitId, version);
 
-    // 1️⃣ Instant UI update
-    setTodayLogs(prev => {
-      const existingIndex = prev.findIndex(l => {
-        const logHabitId = l.habit?._id || l.habit;
-        return logHabitId?.toString() === habitId?.toString();
-      });
-
-      if (existingIndex >= 0) {
-        const updated = [...prev];
-        updated[existingIndex] = optimisticLog;
-        return updated;
-      }
-
-      return [...prev, optimisticLog];
-    });
-
-    try {
-      // 2️⃣ Backend call
-      const { data: res } = await logsAPI.save({
-        habitId,
+      const optimisticLog = {
+        _id: `temp-${habitId}`,
+        habit: habitId,
         date,
         status,
-        ...extra
+        ...extra,
+      };
+
+      // 🔥 Instant optimistic update
+      setTodayLogs((prev) => {
+        const index = prev.findIndex((l) => {
+          const id = l.habit?._id || l.habit;
+          return id?.toString() === habitId?.toString();
+        });
+
+        if (index >= 0) {
+          const updated = [...prev];
+          updated[index] = optimisticLog;
+          return updated;
+        }
+
+        return [...prev, optimisticLog];
       });
 
-      // 3️⃣ Replace optimistic log with real log
-      setTodayLogs(prev =>
-        prev.map(l =>
-          l._id === optimisticLog._id ? res.log : l
-        )
-      );
+      try {
+        const { data: res } = await logsAPI.save({
+          habitId,
+          date,
+          status,
+          ...extra,
+        });
 
-      return res.log;
+        // 🧠 Ignore outdated responses
+        if (logVersions.current.get(habitId) !== version)
+          return;
 
-    } catch (error) {
+        setTodayLogs((prev) => {
+          const index = prev.findIndex((l) => {
+            const id = l.habit?._id || l.habit;
+            return id?.toString() === habitId?.toString();
+          });
 
-      // 4️⃣ Rollback on failure
-      setTodayLogs(prev =>
-        prev.filter(l => l._id !== optimisticLog._id)
-      );
+          if (index >= 0) {
+            const updated = [...prev];
+            updated[index] = res.log;
+            return updated;
+          }
 
-      console.error("Log failed:", error);
-      throw error;
-    }
+          return prev;
+        });
 
-  }, []);
+        return res.log;
+      } catch (error) {
+        console.error("Log failed:", error);
+
+        // rollback only if latest
+        if (logVersions.current.get(habitId) !== version)
+          return;
+
+        setTodayLogs((prev) =>
+          prev.filter(
+            (l) =>
+              (l.habit?._id || l.habit)?.toString() !==
+              habitId?.toString()
+          )
+        );
+      }
+    },
+    []
+  );
 
   /* ================= GET TODAY LOG ================= */
 
-  const getTodayLog = useCallback((habitId) => {
-    return todayLogs.find(l => {
-      const logHabitId = l.habit?._id || l.habit;
-      return logHabitId?.toString() === habitId?.toString();
-    });
-  }, [todayLogs]);
+  const getTodayLog = useCallback(
+    (habitId) => {
+      return todayLogs.find((l) => {
+        const id = l.habit?._id || l.habit;
+        return id?.toString() === habitId?.toString();
+      });
+    },
+    [todayLogs]
+  );
 
   return (
-    <HabitsContext.Provider value={{
-      habits,
-      todayLogs,
-      loading,
-      fetchHabits,
-      createHabit,
-      updateHabit,
-      deleteHabit,
-      logHabit,
-      getTodayLog
-    }}>
+    <HabitsContext.Provider
+      value={{
+        habits,
+        todayLogs,
+        loading,
+        fetchHabits,
+        createHabit,
+        updateHabit,
+        deleteHabit,
+        logHabit,
+        getTodayLog,
+      }}
+    >
       {children}
     </HabitsContext.Provider>
   );
@@ -140,6 +168,7 @@ export const HabitsProvider = ({ children }) => {
 
 export const useHabits = () => {
   const ctx = useContext(HabitsContext);
-  if (!ctx) throw new Error('useHabits must be used within HabitsProvider');
+  if (!ctx)
+    throw new Error("useHabits must be used within HabitsProvider");
   return ctx;
 };
