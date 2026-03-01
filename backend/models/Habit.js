@@ -11,6 +11,7 @@ const habitSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Habit name is required'],
     trim: true,
+    lowercase: true, // ✅ normalize to prevent case duplicates
     maxlength: [100, 'Name cannot exceed 100 characters']
   },
   description: {
@@ -24,7 +25,7 @@ const habitSchema = new mongoose.Schema({
     default: 'daily'
   },
   targetDays: {
-    type: [Number], // 0=Sun, 1=Mon, ..., 6=Sat (for weekly)
+    type: [Number],
     default: [0, 1, 2, 3, 4, 5, 6]
   },
   goalTarget: {
@@ -48,7 +49,17 @@ const habitSchema = new mongoose.Schema({
   },
   category: {
     type: String,
-    enum: ['health', 'fitness', 'learning', 'mindfulness', 'productivity', 'social', 'creativity', 'finance', 'other'],
+    enum: [
+      'health',
+      'fitness',
+      'learning',
+      'mindfulness',
+      'productivity',
+      'social',
+      'creativity',
+      'finance',
+      'other'
+    ],
     default: 'other'
   },
   difficulty: {
@@ -68,6 +79,12 @@ const habitSchema = new mongoose.Schema({
   timestamps: true
 });
 
+/* ================= INDEXES ================= */
+
+// Prevent duplicate habit names per user
+habitSchema.index({ user: 1, name: 1 }, { unique: true });
+
+// Existing indexes
 habitSchema.index({ user: 1, isArchived: 1 });
 habitSchema.index({ user: 1, createdAt: -1 });
 
